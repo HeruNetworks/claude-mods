@@ -1,0 +1,1 @@
+{ "name": "model-switch", "version": "0.2.0", "description": "One-tap model switch (Opus, Sonnet, Haiku, Fable) above the prompt, plus /opus /sonnet /haiku /fable, effort medium by default", "types": "./types/index.d.ts", "license": "MIT", "author": { "name": "Heru Networks" } }

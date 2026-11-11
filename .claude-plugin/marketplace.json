@@ -1,0 +1,8 @@
+{
+  "name": "heru-mods",
+  "owner": { "name": "Heru Networks" },
+  "description": "Small Claude Code mods for Heru Networks",
+  "plugins": [
+    { "name": "model-switch", "source": "./plugins/model-switch", "description": "One-tap model and effort switch (Opus, Sonnet, Haiku, Fable) for Claude Code, phone friendly" }
+  ]
+}
