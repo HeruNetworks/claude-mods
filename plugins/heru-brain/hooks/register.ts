@@ -10,10 +10,10 @@
 import type { EngineInterface, Register } from 'claude-code'
 
 const BRAIN_NAMES = ['Heru_Brain', 'Heru Brain', 'claude.ai Heru Brain', 'claude_ai_Heru_Brain']
-const REMOTE = 'claude-code-remote'
 const HUMAN = ['composer', 'bridge']
 
 let brainName = ''
+let remoteName = 'claude-code-remote'
 let briefing = ''
 let title = ''
 let remoteId = ''
@@ -54,7 +54,7 @@ async function callServer($: EngineInterface, server: string, tool: string, args
 }
 
 async function brain($: EngineInterface, tool: string, args: Record<string, unknown>, ms = 12000): Promise<Reply> {
-  for (const name of brainName ? [brainName] : BRAIN_NAMES) {
+  for (const name of brainName ? [brainName, ...BRAIN_NAMES] : BRAIN_NAMES) {
     const reply = await callServer($, name, tool, args, ms)
     if (reply !== null) {
       brainName = name
@@ -77,10 +77,25 @@ function lines(value: unknown, max: number): string {
   return Array.isArray(value) ? value.slice(0, max).map(item => `- ${String(item)}`).join('\n') : ''
 }
 
+// A connector is not always listed under its plain name: a chat opened by another chat lists the Heru Brain
+// under an id. So the server is read from the chat's own tool names (mcp__<server>__brain_start).
+function learnServers(names: readonly string[]): void {
+  for (const name of names) {
+    const brainMatch = /^mcp__(.+)__brain_start$/.exec(name)
+    if (brainMatch?.[1]) brainName = brainMatch[1]
+    const remoteMatch = /^mcp__(.+)__set_session_title$/.exec(name)
+    if (remoteMatch?.[1]) remoteName = remoteMatch[1]
+  }
+}
+
 async function identify($: EngineInterface): Promise<void> {
+  if (!brainName) {
+    try { learnServers((await $.tool.list()).map(tool => tool.name)) } catch { /* fall back to the plain names */ }
+    await dbg($, `servers brain=${brainName} remote=${remoteName}`)
+  }
   if (!localId) { try { localId = await $.session.id() } catch { localId = '' } }
   if (remoteId) return
-  const self = await callServer($, REMOTE, 'get_session', {}, 8000)
+  const self = await callServer($, remoteName, 'get_session', {}, 8000)
   const found = /session_[A-Za-z0-9]{10,}/.exec(JSON.stringify(self ?? {}))
   remoteId = found ? found[0] : ''
 }
@@ -111,7 +126,7 @@ async function registerChat($: EngineInterface, firstMessage: string): Promise<v
   if (registered === null || typeof registered.title !== 'string' || !registered.title) return
   title = registered.title
   let isRenamed = false
-  if (remoteId) isRenamed = (await callServer($, REMOTE, 'set_session_title', { session_id: remoteId, title }, 8000)) !== null
+  if (remoteId) isRenamed = (await callServer($, remoteName, 'set_session_title', { session_id: remoteId, title }, 8000)) !== null
   const parts = [
     `THIS CHAT IS ALREADY REGISTERED WITH THE HERU BRAIN BY CODE. Title: "${title}"${isRenamed ? ' (the chat has been renamed to it)' : ' (rename the chat to it if you can, else tell Mario the title in one line)'}. brain_start has been run for you: do NOT call it again, even if your instructions say to call it first. If the title does not fit what Mario asked, rename the chat yourself, keeping the date at the front.`,
   ]
@@ -153,6 +168,7 @@ export const register: Register = on => {
 
   on('prompt.compose', async ($, e, next) => {
     const composed = await next(e)
+    if (!brainName) learnServers(e.tools)
     await dbg($, `prompt.compose sections=${composed.sections.length} briefing=${briefing.length}`)
     if (!briefing) return composed
     isBriefingInInstructions = true
