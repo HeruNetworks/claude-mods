@@ -32,25 +32,50 @@ async function dbg($: EngineInterface, line: string): Promise<void> {
 
 type Reply = Record<string, unknown> | null
 
-async function callServer($: EngineInterface, server: string, tool: string, args: Record<string, unknown>, ms: number): Promise<Reply> {
-  const timedOut = { timedOut: true } as const
-  let thrown = ''
-  const result = await Promise.race([
-    $.mcp.call(server, tool, args).catch((err: unknown) => { thrown = String((err as Error)?.message ?? err); return null }),
-    $.clock.sleep(ms).then(() => timedOut).catch(() => timedOut),
-  ])
-  if (result === null || 'timedOut' in result || result.isError) {
-    await dbg($, `call ${server}.${tool}: ${result === null ? `threw ${thrown}` : 'timedOut' in result ? 'timed out' : `isError ${JSON.stringify(result.content).slice(0, 300)}`}`)
-    return null
-  }
-  const text = result.content.map(block => (block.type === 'text' ? (block.text ?? '') : '')).join('')
-  await dbg($, `call ${server}.${tool}: ok ${text.slice(0, 120)}`)
+function parse(text: string): Record<string, unknown> {
   try {
     const parsed: unknown = JSON.parse(text)
     return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : { text }
   } catch {
     return { text }
   }
+}
+
+// One connector tool call, two roads. First by the tool's full name, the way the chat itself calls it
+// (this works whatever the connector is listed as); then by server name. Timed, and never throws.
+async function callServer($: EngineInterface, server: string, tool: string, args: Record<string, unknown>, ms: number): Promise<Reply> {
+  const timedOut = { timedOut: true } as const
+  const attempt = async (): Promise<Reply> => {
+    try {
+      const ran = (await $.tool.call({ tool: `mcp__${server}__${tool}`, ...args } as never)) as { deny?: string; isError?: boolean; text?: string; result?: unknown }
+      if (ran.deny === undefined && ran.isError !== true) {
+        const text = typeof ran.text === 'string' && ran.text ? ran.text : typeof ran.result === 'string' ? ran.result : JSON.stringify(ran.result ?? '')
+        await dbg($, `tool ${server}.${tool}: ok ${text.slice(0, 100)}`)
+        return parse(text)
+      }
+      await dbg($, `tool ${server}.${tool}: ${ran.deny !== undefined ? `deny ${ran.deny}` : `isError ${JSON.stringify(ran.result ?? '').slice(0, 200)}`}`)
+    } catch (err) {
+      await dbg($, `tool ${server}.${tool}: threw ${String((err as Error)?.message ?? err).slice(0, 200)}`)
+    }
+    try {
+      const result = await $.mcp.call(server, tool, args)
+      if (!result.isError) {
+        const text = result.content.map(block => (block.type === 'text' ? (block.text ?? '') : '')).join('')
+        await dbg($, `mcp ${server}.${tool}: ok ${text.slice(0, 100)}`)
+        return parse(text)
+      }
+      await dbg($, `mcp ${server}.${tool}: isError ${JSON.stringify(result.content).slice(0, 200)}`)
+    } catch (err) {
+      await dbg($, `mcp ${server}.${tool}: threw ${String((err as Error)?.message ?? err).slice(0, 200)}`)
+    }
+    return null
+  }
+  const result = await Promise.race([attempt(), $.clock.sleep(ms).then(() => timedOut).catch(() => timedOut)])
+  if (result !== null && 'timedOut' in result && result.timedOut === true && Object.keys(result).length === 1) {
+    await dbg($, `call ${server}.${tool}: timed out`)
+    return null
+  }
+  return result as Reply
 }
 
 async function brain($: EngineInterface, tool: string, args: Record<string, unknown>, ms = 12000): Promise<Reply> {
@@ -143,7 +168,7 @@ export const register: Register = on => {
       await identify($)
       await fetchBriefing($)
     } catch { /* the chat carries on */ }
-    await dbg($, `session.start heru-brain 0.1.2 brain=${brainName} remote=${remoteName} id=${remoteId} briefing=${briefing.length}`)
+    await dbg($, `session.start heru-brain 0.1.3 brain=${brainName} remote=${remoteName} id=${remoteId} briefing=${briefing.length}`)
     return next(e)
   })
 
