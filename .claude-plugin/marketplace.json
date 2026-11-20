@@ -1,8 +1,19 @@
 {
   "name": "heru-mods",
-  "owner": { "name": "Heru Networks" },
+  "owner": {
+    "name": "Heru Networks"
+  },
   "description": "Small Claude Code mods for Heru Networks",
   "plugins": [
-    { "name": "model-switch", "source": "./plugins/model-switch", "description": "One-tap model and effort switch (Opus, Sonnet, Haiku, Fable) for Claude Code, phone friendly" }
+    {
+      "name": "model-switch",
+      "source": "./plugins/model-switch",
+      "description": "One-tap model and effort switch (Opus, Sonnet, Haiku, Fable) for Claude Code, phone friendly"
+    },
+    {
+      "name": "heru-brain",
+      "source": "./plugins/heru-brain",
+      "description": "Every chat starts briefed by the Heru Brain and is recorded, by code"
+    }
   ]
 }
