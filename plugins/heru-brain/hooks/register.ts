@@ -22,7 +22,7 @@ let isStarted = false
 let titleNote = ''
 let isBriefingInInstructions = false
 
-const DEBUG_PATH = ''
+const DEBUG_PATH = '/tmp/heru-brain-debug.log'
 let debugText = ''
 async function dbg($: EngineInterface, line: string): Promise<void> {
   if (!DEBUG_PATH) return
@@ -143,7 +143,7 @@ export const register: Register = on => {
       await identify($)
       await fetchBriefing($)
     } catch { /* the chat carries on */ }
-    await dbg($, `session.start briefing=${briefing.length}`)
+    await dbg($, `session.start heru-brain 0.1.2 brain=${brainName} remote=${remoteName} id=${remoteId} briefing=${briefing.length}`)
     return next(e)
   })
 

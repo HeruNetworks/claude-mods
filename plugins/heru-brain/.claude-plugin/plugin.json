@@ -1,1 +1,1 @@
-{ "name": "heru-brain", "version": "0.1.1", "description": "Every chat starts briefed and is recorded: briefing from the Heru Brain put in the chat by code, chat registered and renamed, messages and app releases saved", "license": "MIT", "author": { "name": "Heru Networks" } }
+{ "name": "heru-brain", "version": "0.1.2", "description": "Every chat starts briefed and is recorded: briefing from the Heru Brain put in the chat by code, chat registered and renamed, messages and app releases saved", "license": "MIT", "author": { "name": "Heru Networks" } }
