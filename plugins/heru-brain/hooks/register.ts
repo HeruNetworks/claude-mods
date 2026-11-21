@@ -18,7 +18,8 @@ let briefing = ''
 let title = ''
 let remoteId = ''
 let localId = ''
-let isStarted = false
+let isRegistered = false
+let isBriefingHandedOver = false
 let titleNote = ''
 let isBriefingInInstructions = false
 
@@ -116,6 +117,14 @@ function learnServers(names: readonly string[]): void {
 async function identify($: EngineInterface): Promise<void> {
   if (!brainName) {
     try { learnServers((await $.tool.list()).map(tool => tool.name)) } catch { /* fall back to the plain names */ }
+    if (!brainName) {
+      // Connector tools that are not loaded yet are not in the list: ask the chat's own tool search for the name.
+      try {
+        const found = (await $.tool.call({ tool: 'ToolSearch', query: 'brain_start', max_results: 3 } as never)) as unknown
+        const match = /mcp__([A-Za-z0-9_. -]+?)__brain_start/.exec(JSON.stringify(found ?? ''))
+        if (match?.[1]) brainName = match[1]
+      } catch { /* fall back to the plain names */ }
+    }
     await dbg($, `servers brain=${brainName} remote=${remoteName}`)
   }
   if (!localId) { try { localId = await $.session.id() } catch { localId = '' } }
@@ -139,7 +148,7 @@ async function fetchBriefing($: EngineInterface): Promise<void> {
 async function registerChat($: EngineInterface, firstMessage: string): Promise<void> {
   let turns = 0
   try { turns = await $.session.turns() } catch { turns = 0 }
-  if (turns > 1) return
+  if (turns > 3) { isRegistered = true; return }
   const registered = await brain($, 'brain_start', {
     message: firstMessage.slice(0, 1500),
     project: 'none',
@@ -150,6 +159,7 @@ async function registerChat($: EngineInterface, firstMessage: string): Promise<v
   })
   if (registered === null || typeof registered.title !== 'string' || !registered.title) return
   title = registered.title
+  isRegistered = true
   let isRenamed = false
   if (remoteId) isRenamed = (await callServer($, remoteName, 'set_session_title', { session_id: remoteId, title }, 8000)) !== null
   const parts = [
@@ -168,24 +178,36 @@ export const register: Register = on => {
       await identify($)
       await fetchBriefing($)
     } catch { /* the chat carries on */ }
-    await dbg($, `session.start heru-brain 0.1.3 brain=${brainName} remote=${remoteName} id=${remoteId} briefing=${briefing.length}`)
+    await dbg($, `session.start heru-brain 0.1.4 brain=${brainName} remote=${remoteName} id=${remoteId} briefing=${briefing.length}`)
     return next(e)
   })
 
   on('prompt.submit', async ($, e, next) => {
-    await dbg($, `prompt.submit meta=${String(e.isMeta)} origin=${e.origin.kind} started=${String(isStarted)} briefing=${briefing.length} inInstructions=${String(isBriefingInInstructions)}`)
+    await dbg($, `prompt.submit meta=${String(e.isMeta)} origin=${e.origin.kind} briefing=${briefing.length} registered=${String(isRegistered)} inInstructions=${String(isBriefingInInstructions)}`)
     if (e.isMeta === true || e.command !== undefined || !e.text.trim()) return next(e)
     const isHuman = HUMAN.includes(e.origin.kind)
     const extra: string[] = []
-    if (!isStarted) {
-      isStarted = true
+    if (!briefing || !isRegistered) {
+      // The Brain connector can still be connecting when the first message is sent: try a few times, then
+      // carry on and try again on the next message. Nothing here can stop the message.
       try {
-        await identify($)
-        await Promise.all([fetchBriefing($), registerChat($, e.text)])
+        const tries = briefing ? 1 : 4
+        for (let attempt = 0; attempt < tries; attempt++) {
+          await identify($)
+          await fetchBriefing($)
+          if (briefing) break
+          if (attempt < tries - 1) await $.clock.sleep(2500)
+        }
+        if (briefing && !isRegistered) {
+          await registerChat($, e.text)
+          if (titleNote) extra.push(titleNote)
+        }
       } catch { /* the chat carries on without a briefing */ }
-      if (titleNote) extra.push(titleNote)
-      // The instructions were put together before the briefing arrived: hand it over with this message instead.
-      if (briefing && !isBriefingInInstructions) extra.push(briefing)
+    }
+    // The instructions were put together before the briefing arrived: hand it over with this message instead.
+    if (briefing && !isBriefingInInstructions && !isBriefingHandedOver) {
+      isBriefingHandedOver = true
+      extra.push(briefing)
     }
     await record($, isHuman ? 'user' : 'tool', e.text, { origin: e.origin.kind })
     return extra.length > 0 ? next({ ...e, context: [...(e.context ?? []), ...extra] }) : next(e)
