@@ -17,6 +17,7 @@ let remoteName = 'claude-code-remote'
 let briefing = ''
 let title = ''
 let remoteId = ''
+let givenTitle = ''
 let localId = ''
 let isRegistered = false
 let isBriefingHandedOver = false
@@ -132,6 +133,8 @@ async function identify($: EngineInterface): Promise<void> {
   const self = await callServer($, remoteName, 'get_session', {}, 8000)
   const found = /session_[A-Za-z0-9]{10,}/.exec(JSON.stringify(self ?? {}))
   remoteId = found ? found[0] : ''
+  const session = self !== null && typeof self.ccr === 'object' && self.ccr !== null ? (self.ccr as Record<string, unknown>) : null
+  givenTitle = session !== null && typeof session.title === 'string' ? session.title : ''
 }
 
 // The briefing: asked for as early as the session allows, and again at the first message if the Brain
@@ -149,8 +152,13 @@ async function registerChat($: EngineInterface, firstMessage: string): Promise<v
   let turns = 0
   try { turns = await $.session.turns() } catch { turns = 0 }
   if (turns > 3) { isRegistered = true; return }
+  // A chat opened by the Master chat already carries a dated title ("20 Nov - Apps - Cable Log: ..."): keep it.
+  // Otherwise the title is built from Mario's first words, never from a loosely matched Brain card.
+  const dated = /^\d{1,2} [A-Z][a-z]{2} - (?:[^-]+ - )?(.+)$/.exec(givenTitle)
+  const hint = (dated?.[1] ?? firstMessage).replace(/[^\p{L}\p{N}' ]+/gu, ' ').trim().split(/\s+/).slice(0, 6).join(' ')
   const registered = await brain($, 'brain_start', {
     message: firstMessage.slice(0, 1500),
+    ...(hint ? { title_hint: hint } : {}),
     project: 'none',
     client: 'Claude Code (heru-brain mod)',
     agent: 'claude',
@@ -158,10 +166,10 @@ async function registerChat($: EngineInterface, firstMessage: string): Promise<v
     ...(remoteId ? { chat_url: `https://claude.ai/code/${remoteId}` } : {}),
   })
   if (registered === null || typeof registered.title !== 'string' || !registered.title) return
-  title = registered.title
+  title = dated ? givenTitle : registered.title
   isRegistered = true
-  let isRenamed = false
-  if (remoteId) isRenamed = (await callServer($, remoteName, 'set_session_title', { session_id: remoteId, title }, 8000)) !== null
+  let isRenamed = dated !== null
+  if (remoteId && !dated) isRenamed = (await callServer($, remoteName, 'set_session_title', { session_id: remoteId, title }, 8000)) !== null
   const parts = [
     `THIS CHAT IS ALREADY REGISTERED WITH THE HERU BRAIN BY CODE. Title: "${title}"${isRenamed ? ' (the chat has been renamed to it)' : ' (rename the chat to it if you can, else tell Mario the title in one line)'}. brain_start has been run for you: do NOT call it again, even if your instructions say to call it first. If the title does not fit what Mario asked, rename the chat yourself, keeping the date at the front.`,
   ]
@@ -178,7 +186,7 @@ export const register: Register = on => {
       await identify($)
       await fetchBriefing($)
     } catch { /* the chat carries on */ }
-    await dbg($, `session.start heru-brain 0.1.4 brain=${brainName} remote=${remoteName} id=${remoteId} briefing=${briefing.length}`)
+    await dbg($, `session.start heru-brain 0.1.5 brain=${brainName} remote=${remoteName} id=${remoteId} briefing=${briefing.length}`)
     return next(e)
   })
 
