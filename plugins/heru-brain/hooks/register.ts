@@ -154,7 +154,9 @@ async function registerChat($: EngineInterface, firstMessage: string): Promise<v
   if (turns > 3) { isRegistered = true; return }
   // A chat opened by the Master chat already carries a dated title ("20 Nov - Apps - Cable Log: ..."): keep it.
   // Otherwise the title is built from Mario's first words, never from a loosely matched Brain card.
-  const dated = /^\d{1,2} [A-Z][a-z]{2} - (?:[^-]+ - )?(.+)$/.exec(givenTitle)
+  // 21 Nov 2026 (Mario: the chat was renamed again on a later message): a master chat's title starts with a star, so the
+  // dated-title check must allow a leading star or other symbol; before, it failed and the chat was renamed from the newest message.
+  const dated = /^[^\p{L}\p{N}]*\d{1,2} [A-Z][a-z]{2} - (?:[^-]+ - )?(.+)$/u.exec(givenTitle)
   const hint = (dated?.[1] ?? firstMessage).replace(/[^\p{L}\p{N}' ]+/gu, ' ').trim().split(/\s+/).slice(0, 6).join(' ')
   const registered = await brain($, 'brain_start', {
     message: firstMessage.slice(0, 1500),
@@ -186,7 +188,7 @@ export const register: Register = on => {
       await identify($)
       await fetchBriefing($)
     } catch { /* the chat carries on */ }
-    await dbg($, `session.start heru-brain 0.1.5 brain=${brainName} remote=${remoteName} id=${remoteId} briefing=${briefing.length}`)
+    await dbg($, `session.start heru-brain 0.1.6 brain=${brainName} remote=${remoteName} id=${remoteId} briefing=${briefing.length}`)
     return next(e)
   })
 
