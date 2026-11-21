@@ -63,7 +63,7 @@ export const register: Register = on => {
       await $.command.register({ name: m.cmd, description: `Switch to ${m.name} (${m.note}), effort medium` })
     }
     await $.command.register({ name: 'models', description: 'Show the model switch buttons' })
-    void $.ui.open({ id: PANE, title: 'Model' })
+    // Panel no longer opens by itself (Mario, 21 Nov 2026). Type /models to open it.
     return next(e)
   })
 
